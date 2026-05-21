@@ -41,7 +41,7 @@
 
     <style>
 
-```
+
     /* ═══════════════════════════════════════
        THEME: DARK (default) + LIGHT (device)
     ═══════════════════════════════════════ */
@@ -760,7 +760,7 @@
 
 
 </style>
-```
+
 
 </head>
 <body>
@@ -851,16 +851,17 @@
                 </select>
             </div>
 
-            <div class="field-group">
-                <div class="field-label">📱 Recipient Number</div>
-                <div class="phone-input-wrap">
-                    <div class="phone-prefix">
-                        <span class="flag"><img src="https://flagcdn.com/w20/gh.png" alt="GH" style="width: 20px; border-radius: 2px;"></span>
-                        <span>+233</span>
-                    </div>
-                    <input type="tel" id="phone" placeholder="054 000 0000" maxlength="10">
-                </div>
-            </div>
+     <div class="field-group">
+    <div class="field-label">📱 Recipient Number</div>
+    <div class="phone-input-wrap">
+        <div class="phone-prefix">
+            <span class="flag"><img src="https://flagcdn.com/w20/gh.png" alt="GH" style="width: 20px; border-radius: 2px;"></span>
+            <span>+233</span>
+        </div>
+        <input type="tel" id="phone" placeholder="054 000 0000" maxlength="10">
+    </div>
+    <div id="nameVerification" style="font-size: 0.75rem; font-weight: 600; margin-top: 6px; padding: 2px 4px; display: none;"></div>
+</div>
 
             <div class="price-display" id="priceDisplay">
                 <span class="price-label">Total to Pay</span>
@@ -953,22 +954,102 @@
      }
 
 
+// Initialize Supabase (Ensure RLS is enabled on your Supabase dashboard!)
 const _supabase = supabase.createClient(
     "https://zhinkuoqxsmotnbsjdue.supabase.co",
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpoaW5rdW9xeHNtb3RuYnNqZHVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzOTc1MzIsImV4cCI6MjA4Nzk3MzUzMn0.Kw5BDJDH9WOAiE3a-P6ylQiseErYG-mHCFi5fgamnUY"
 );
 
-let allBundles    = [];
+// Global State Variables
+let allBundles = [];
 let selectedNetwork = null;
+let lastVerifiedNumber = ""; // Tracks lookups to prevent duplicate webhook spam
 
+// ═══════════════════════════════════════
+// MOBILE MONEY NAME VERIFICATION
+// ═══════════════════════════════════════
+async function verifyMobileMoneyName() {
+    const phoneInput = document.getElementById("phone");
+    const nameDisplay = document.getElementById("nameVerification");
+    const MAKE_LOOKUP_URL = "https://hook.us2.make.com/0kdx3awfr21xiti059ddbwl3gqcpa5cs";
+ // Replace with your real Make Webhook link
+
+    let value = phoneInput.value.trim().replace(/\s+/g, ''); // strip out any extra spaces
+    
+    // 1. Reset display if user deletes text or drops below 10 digits
+    if (value.length < 10) {
+        nameDisplay.style.display = "none";
+        nameDisplay.innerText = "";
+        return;
+    }
+
+    // 2. Make sure they have tapped an official network card first
+    if (!selectedNetwork) {
+        showToast("Please choose a network first!", "error");
+        return;
+    }
+
+    // 3. Only fire if the 10-digit number has actually changed
+    if (value.length === 10 && value !== lastVerifiedNumber) {
+        lastVerifiedNumber = value; 
+
+        // Map your layout's network types to Paystack API bank codes
+        let paystackBankCode = "";
+        if (selectedNetwork === "MTN") paystackBankCode = "MTN";
+        else if (selectedNetwork === "Vodafone") paystackBankCode = "VOD";
+        else if (selectedNetwork === "AirtelTigo") paystackBankCode = "ATL";
+
+        // Show a temporary styling while processing background network fetch
+        nameDisplay.style.display = "block";
+        nameDisplay.style.color = "var(--muted)";
+        nameDisplay.innerHTML = `⏳ Verifying details...`;
+
+        try {
+            const response = await fetch(MAKE_LOOKUP_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    phoneNumber: value,
+                    networkCode: paystackBankCode
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.status === "success" && result.name) {
+                // Update layout to display verified customer legal registry name
+                nameDisplay.style.color = "var(--green)";
+                nameDisplay.innerHTML = `👤 Registered Owner: <strong>${result.name}</strong>`;
+            } else {
+                // Fail gracefully if number isn't registered on MoMo
+                nameDisplay.style.color = "var(--red)";
+                nameDisplay.innerHTML = `⚠️ Number details could not be resolved`;
+            }
+        } catch (error) {
+            console.error("Verification error:", error);
+            nameDisplay.style.color = "var(--red)";
+            nameDisplay.innerHTML = `❌ Error connecting to database lookup`;
+        }
+    }
+}
+
+// ═══════════════════════════════════════
+// INITIALIZATION & EVENT LISTENERS
+// ═══════════════════════════════════════
 document.addEventListener("DOMContentLoaded", () => {
     loadBundles();
 
+    // Hook up lookup verification to telephone field modifications
+    const phoneInput = document.getElementById("phone");
+    phoneInput.addEventListener("input", verifyMobileMoneyName);
+
+    // Navigation and menu toggles
     const menuBtn = document.getElementById("menuBtn");
     const menu    = document.getElementById("menu");
     menuBtn.addEventListener("click", e => { e.stopPropagation(); menu.classList.toggle("show"); });
     window.addEventListener("click", () => menu.classList.remove("show"));
 
+    // Modal UI Handlers
     const openModal  = () => document.getElementById("termsModal").classList.add("open");
     const closeModal = () => document.getElementById("termsModal").classList.remove("open");
 
@@ -982,12 +1063,20 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("termsModal").addEventListener("click", e => { if (e.target === e.currentTarget) closeModal(); });
 });
 
+// ═══════════════════════════════════════
+// INTERACTIVE APPS FLOW CONTROLLERS
+// ═══════════════════════════════════════
 function selectNetwork(network, el) {
     selectedNetwork = network;
     document.querySelectorAll('.network-card').forEach(c => c.classList.remove('selected'));
     el.classList.add('selected');
+    
     populateBundles(allBundles.filter(b => b.network.toLowerCase() === network.toLowerCase()));
     document.getElementById('priceDisplay').classList.remove('visible');
+
+    // Reset verification tracker so network changes re-validate numbers accurately
+    lastVerifiedNumber = "";
+    verifyMobileMoneyName();
 }
 
 async function loadBundles() {
@@ -1008,7 +1097,7 @@ function populateBundles(data) {
     data.forEach(item => {
         const opt = document.createElement('option');
         opt.value = item.id;
-        opt.textContent = `${item.network} ${item.size} — GH₵${item.price}`;
+        opt.textContent = `${item.network} ${item.size} — GH₵${parseFloat(item.price).toFixed(2)}`;
         sel.appendChild(opt);
     });
 }
@@ -1022,8 +1111,11 @@ function updatePrice() {
     }
 }
 
+// ═══════════════════════════════════════
+// IN-LINE CHECKOUT AND PAYMENT CONTEXT
+// ═══════════════════════════════════════
 async function buyData() {
-    const phone    = document.getElementById('phone').value.trim();
+    const phone    = document.getElementById('phone').value.trim().replace(/\s+/g, '');
     const bundleId = document.getElementById('bundle').value;
     const buyBtn   = document.getElementById('buyBtn');
     const spinner  = document.getElementById('spinner');
@@ -1037,10 +1129,10 @@ async function buyData() {
     spinner.style.display = 'block';
     btnText.textContent = 'Opening Payment...';
 
-     const handler = PaystackPop.setup({
+    const handler = PaystackPop.setup({
         key:      'pk_live_68410a36c97591a8e61aa8fc998b9e39cf51b92f',
-        email:    `${phone}@nextstepdata.com`,
-        amount:   Math.round(bundle.price * 100),
+        email:    `${phone}@sci-fidata.com`,
+        amount:   Math.round(parseFloat(bundle.price) * 100),
         currency: "GHS",
         ref:      'SF-' + Math.floor((Math.random() * 1000000000) + 1),
         metadata: {
@@ -1051,7 +1143,7 @@ async function buyData() {
                 { display_name: "Phone Number", variable_name: "phone", value: phone },
                 { display_name: "Network", variable_name: "network", value: bundle.network },
                 { display_name: "Size", variable_name: "bundle_size", value: bundle.size },
-                { display_name: "Bundle ID", variable_name: "bundle_id", value: bundle.id } // <--- And this one for the Dashboard
+                { display_name: "Bundle ID", variable_name: "bundle_id", value: bundle.id }
             ]
         },
         callback: response => { 
@@ -1064,7 +1156,7 @@ async function buyData() {
         }
     });
     handler.openIframe();
-  }
+}
 
 function showToast(msg, type = '') {
     const toast = document.getElementById('toast');
@@ -1073,6 +1165,7 @@ function showToast(msg, type = '') {
     toast.className = `toast ${type} show`;
     setTimeout(() => toast.classList.remove('show'), 3500);
 }
+
 </script>
 
 </body>
