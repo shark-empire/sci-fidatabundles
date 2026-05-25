@@ -1121,6 +1121,7 @@ function updatePrice() {
 // ═══════════════════════════════════════
 // IN-LINE CHECKOUT AND PAYMENT CONTEXT
 // ═══════════════════════════════════════
+
 async function buyData() {
     const phone    = document.getElementById('phone').value.trim().replace(/\s+/g, '');
     const bundleId = document.getElementById('bundle').value;
@@ -1136,6 +1137,27 @@ async function buyData() {
     spinner.style.display = 'block';
     btnText.textContent = 'Opening Payment...';
 
+    // ═══════════ NEW FRONTEND PARSING LOGIC ═══════════
+    // 1. Parse Data Size into explicit MB Integers
+    let parsedVolume = 1000; // default fallback
+    const rawSize = String(bundle.size).toUpperCase().trim();
+    if (rawSize.includes('1GB')) parsedVolume = 1000;
+    else if (rawSize.includes('2GB')) parsedVolume = 2000;
+    else if (rawSize.includes('3GB')) parsedVolume = 3000;
+    else if (rawSize.includes('4GB')) parsedVolume = 4000;
+    else {
+        // Fallback or attempt dynamic extraction if size matches things like "5GB"
+        const matchedNum = rawSize.match(/\d+/);
+        if (matchedNum) parsedVolume = parseInt(matchedNum[0], 10) * 1000;
+    }
+
+    // 2. Map legacy names like 'vodafone' to Telecel officially
+    let parsedNetwork = String(bundle.network).toLowerCase().trim();
+    if (parsedNetwork === 'vodafone') {
+        parsedNetwork = 'telecel';
+    }
+    // ═══════════════════════════════════════════════════
+
     const handler = PaystackPop.setup({
         key:      'pk_live_68410a36c97591a8e61aa8fc998b9e39cf51b92f',
         email:    `${phone}@sci-fidata.com`,
@@ -1144,12 +1166,13 @@ async function buyData() {
         ref:      'SF-' + Math.floor((Math.random() * 1000000000) + 1),
         metadata: {
             phone: phone,
-            network: bundle.network,
+            network: parsedNetwork,          // Clean normalized string (e.g., 'telecel', 'mtn')
+            volumeInMB: parsedVolume,        // Raw, unquoted Integer (e.g., 2000)
             bundle_size: bundle.size,
             custom_fields: [
                 { display_name: "Phone Number", variable_name: "phone", value: phone },
-                { display_name: "Network", variable_name: "network", value: bundle.network },
-                { display_name: "Size", variable_name: "bundle_size", value: bundle.size },
+                { display_name: "Network", variable_name: "network", value: parsedNetwork },
+                { display_name: "Volume MB", variable_name: "volume_in_mb", value: parsedVolume },
                 { display_name: "Bundle ID", variable_name: "bundle_id", value: bundle.id }
             ]
         },
